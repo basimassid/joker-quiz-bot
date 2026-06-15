@@ -1,0 +1,7 @@
+# بيئة وملفات محلية / local env & files
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+leaderboard.json
