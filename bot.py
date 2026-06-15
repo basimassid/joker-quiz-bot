@@ -110,6 +110,10 @@ TEXT = {
         "mid_answer": "✅ *الإجابة النموذجية:*\n\n{a}",
         "mid_next": "➡️ السؤال التالي",
         "mid_done": "🎓 *انتهى امتحان الميد!*\nراجعت {n} أسئلة. بالتوفيق في امتحانك! 💪",
+        "time_over": "⏱️ *انتهى الوقت!*\nاختر: تخطّي السؤال أم إيقاف الاختبار.",
+        "skip": "⏭️ تخطّي",
+        "stop_quiz": "⏹️ إيقاف",
+        "quiz_menu": "📋 القائمة",
         "help": (
             "ℹ️ *المساعدة*\n\n"
             "/start — بدء الاختبار واختيار القسم\n"
@@ -162,6 +166,10 @@ TEXT = {
         "mid_answer": "✅ *Model answer:*\n\n{a}",
         "mid_next": "➡️ Next question",
         "mid_done": "🎓 *Mid exam finished!*\nYou reviewed {n} questions. Good luck on your exam! 💪",
+        "time_over": "⏱️ *Time's up!*\nChoose: skip this question or stop the quiz.",
+        "skip": "⏭️ Skip",
+        "stop_quiz": "⏹️ Stop",
+        "quiz_menu": "📋 Menu",
         "help": (
             "ℹ️ *Help*\n\n"
             "/start — start the quiz and choose a section\n"
@@ -305,6 +313,10 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_mid(update, context, lang, data.split(":", 1)[1])
         return
 
+    if data.startswith("quiz:"):
+        await handle_quiz_action(update, context, lang, data.split(":", 1)[1])
+        return
+
     action = data.split(":", 1)[1]
 
     if action == "changelang":
@@ -409,12 +421,18 @@ async def send_question(context, user_id):
     polls = context.application.bot_data.setdefault("polls", {})
     polls[poll_id] = {"user_id": user_id, "correct": q["correct"], "chat_id": chat_id}
 
-    # وظيفة احتياطية: التقدّم إذا لم يُجب خلال الوقت / fallback: advance if unanswered
+    # وظيفة احتياطية: عند انتهاء الوقت، عرض أزرار تخطّي/إيقاف / on timeout, show skip/stop buttons
     context.job_queue.run_once(
         timeout_job, QUESTION_TIME + 1,
         data={"user_id": user_id, "poll_id": poll_id},
         name=f"to_{poll_id}",
     )
+    
+    # أضف زر القائمة للعودة السريعة / Add menu button for quick navigation
+    menu_kb = InlineKeyboardMarkup([[
+        InlineKeyboardButton(t(lang, "quiz_menu"), callback_data="menu:open")
+    ]])
+    await context.bot.send_message(chat_id, t(lang, "quiz_menu"), reply_markup=menu_kb)
 
 
 async def handle_poll_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -442,8 +460,27 @@ async def handle_poll_answer(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def timeout_job(context: ContextTypes.DEFAULT_TYPE):
+    """عند انتهاء الوقت: عرض أزرار بدل التقدّم الآلي / Show buttons instead of auto-advance."""
     data = context.job.data
-    await proceed(context, data["user_id"], data["poll_id"])
+    user_id = data["user_id"]
+    poll_id = data["poll_id"]
+    
+    session = get_session(context, user_id)
+    if not session or not session.get("active"):
+        return
+    if session.get("awaiting_poll_id") != poll_id:
+        return  # سبق الإجابة / answer already received
+    
+    lang = session["lang"]
+    chat_id = session["chat_id"]
+    
+    # عرض أزرار: تخطّي أو إيقاف / Show skip or stop buttons
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton(t(lang, "skip"), callback_data=f"quiz:skip:{poll_id}"),
+         InlineKeyboardButton(t(lang, "stop_quiz"), callback_data="quiz:stop")],
+    ])
+    await context.bot.send_message(chat_id, t(lang, "time_over"),
+                                   parse_mode="Markdown", reply_markup=kb)
 
 
 async def proceed(context, user_id, poll_id):
@@ -511,6 +548,41 @@ async def finish_quiz(context, user_id):
             )
         except Exception as e:  # noqa: BLE001
             logger.warning("Admin notify failed: %s", e)
+
+
+# معالج أزرار الاختبار: تخطّي أو إيقاف / Handle skip/stop buttons during quiz
+async def handle_quiz_action(update, context, lang, action_data):
+    """معالج أزرار الاختبار / Handle skip/stop buttons during quiz."""
+    user_id = update.effective_user.id
+    session = get_session(context, user_id)
+    if not session or not session.get("active") or session.get("mode") != "quiz":
+        return
+    
+    query = update.callback_query
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)
+    except Exception:  # noqa: BLE001
+        pass
+    
+    if action_data.startswith("skip:"):
+        # تخطّي: انتقل للسؤال التالي بدون إجابة / Skip this question
+        poll_id = action_data.split(":", 1)[1]
+        # ألغِ وظيفة انتظار الـ timeout
+        for job in context.job_queue.get_jobs_by_name(f"to_{poll_id}"):
+            job.schedule_removal()
+        
+        session["awaiting_poll_id"] = None
+        session["idx"] += 1
+        await context.job_queue.run_once(
+            next_job, GAP_AFTER_ANSWER,
+            data={"user_id": user_id},
+            name=f"next_{user_id}_{session['idx']}",
+        )
+    
+    elif action_data == "stop":
+        # إيقاف الاختبار / Stop the quiz
+        session["active"] = False
+        await finish_quiz(context, user_id)
 
 
 # --------------------------------------------------------------------
