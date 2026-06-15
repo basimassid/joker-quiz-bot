@@ -16,6 +16,8 @@ The structure is identical across languages: same questions, same order.
 كل سؤال ميد:     {"q": .., "a": الإجابة النموذجية}
 """
 
+import random
+
 QUESTIONS = {
     # ====================================================================
     # ENGLISH
@@ -552,8 +554,10 @@ MID_EXAM = {
 
 
 def get_mid_exam(lang):
-    """أسئلة امتحان الميد المقالية / Mid-exam open-ended questions."""
-    return list(MID_EXAM[lang])
+    """أسئلة امتحان الميد المقالية مخلوطة عشوائياً / Mid-exam open-ended questions, shuffled."""
+    qs = list(MID_EXAM[lang])
+    random.shuffle(qs)
+    return qs
 
 
 # تسميات الأقسام / Section labels (with transparent emoji icons)
@@ -569,13 +573,16 @@ MIDEXAM_LABEL = {"ar": "📝 امتحان الميد", "en": "📝 Mid Exam"}
 
 
 def get_questions(lang, category):
-    """يرجع قائمة الأسئلة للغة وقسم محدّدين / Return question list for a language & category."""
-    return list(QUESTIONS[lang][category])
+    """يرجع قائمة الأسئلة مخلوطة عشوائياً / Return shuffled question list for a language & category."""
+    qs = list(QUESTIONS[lang][category])
+    random.shuffle(qs)
+    return qs
 
 
 def get_full_test(lang):
-    """الاختبار الشامل: كل الأسئلة من جميع الأقسام / Comprehensive test: all questions."""
+    """الاختبار الشامل: كل الأسئلة من جميع الأقسام، مخلوطة عشوائياً / Comprehensive test: all questions, shuffled."""
     out = []
     for cat in CATEGORY_ORDER:
         out.extend(QUESTIONS[lang][cat])
+    random.shuffle(out)
     return out
