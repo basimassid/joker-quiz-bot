@@ -114,6 +114,7 @@ TEXT = {
         "skip": "⏭️ تخطّي",
         "stop_quiz": "⏹️ إيقاف",
         "quiz_menu": "📋 القائمة",
+        "admin_notify_start": "🎬 *مستخدم جديد بدأ الاختبار!*\n👤 {name}\n🌐 اللغة: {language}\n⏰ الوقت: {time}",
         "help": (
             "ℹ️ *المساعدة*\n\n"
             "/start — بدء الاختبار واختيار القسم\n"
@@ -170,6 +171,7 @@ TEXT = {
         "skip": "⏭️ Skip",
         "stop_quiz": "⏹️ Stop",
         "quiz_menu": "📋 Menu",
+        "admin_notify_start": "🎬 *New user started the quiz!*\n👤 {name}\n🌐 Language: {language}\n⏰ Time: {time}",
         "help": (
             "ℹ️ *Help*\n\n"
             "/start — start the quiz and choose a section\n"
@@ -384,6 +386,22 @@ async def start_quiz(update, context, lang, items):
         "name": user.full_name or (user.username or "Player"),
     }
     await context.bot.send_message(chat_id, t(lang, "starting"), parse_mode="Markdown")
+    
+    # إشعار المشرف / Admin notification
+    if ADMIN_CHAT_ID:
+        from datetime import datetime
+        time_str = datetime.now().strftime("%H:%M:%S")
+        lang_label = "العربية" if lang == "ar" else "English"
+        try:
+            await context.bot.send_message(
+                int(ADMIN_CHAT_ID),
+                t(lang, "admin_notify_start", name=user.full_name or user.username or "Unknown",
+                  language=lang_label, time=time_str),
+                parse_mode="Markdown"
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Admin notify start failed: %s", e)
+    
     await send_question(context, user.id)
 
 
@@ -603,6 +621,21 @@ async def start_mid_exam(update, context, lang):
     }
     await context.bot.send_message(chat_id, t(lang, "mid_intro", n=len(items)),
                                    parse_mode="Markdown")
+    
+    # إشعار المشرف / Admin notification
+    if ADMIN_CHAT_ID:
+        from datetime import datetime
+        time_str = datetime.now().strftime("%H:%M:%S")
+        lang_label = "العربية" if lang == "ar" else "English"
+        try:
+            await context.bot.send_message(
+                int(ADMIN_CHAT_ID),
+                f"📝 *امتحان الميد! / Mid Exam!*\n👤 {user.full_name or user.username or 'Unknown'}\n🌐 {lang_label}\n⏰ {time_str}",
+                parse_mode="Markdown"
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Admin notify mid start failed: %s", e)
+    
     await send_mid_question(context, user.id)
 
 
